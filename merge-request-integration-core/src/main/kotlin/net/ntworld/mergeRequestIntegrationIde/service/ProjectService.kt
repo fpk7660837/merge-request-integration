@@ -23,6 +23,8 @@ interface ProjectService {
 
     val registeredProviders: List<ProviderData>
 
+    fun getApplicationService(): ApplicationService
+
     fun supported(): List<ProviderInfo>
 
     fun addProviderConfiguration(id: String, info: ProviderInfo, credentials: ApiCredentials, repository: String)
@@ -67,9 +69,4 @@ interface ProjectService {
 
     fun notify(message: String, type: NotificationType)
 
-    companion object {
-        fun getInstance(ideaProject: IdeaProject): ProjectService {
-            return ServiceManager.getService(ideaProject, ProjectService::class.java)
-        }
-    }
 }

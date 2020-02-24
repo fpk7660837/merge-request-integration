@@ -6,6 +6,7 @@ import net.ntworld.mergeRequest.api.ApiCredentials
 import net.ntworld.mergeRequest.api.MergeRequestApi
 import net.ntworld.mergeRequest.api.MergeRequestOrdering
 import net.ntworld.mergeRequest.query.GetMergeRequestFilter
+import net.ntworld.mergeRequestIntegration.internal.MergeRequestSearchResultImpl
 import net.ntworld.mergeRequestIntegration.provider.gitlab.command.GitlabApproveMRCommand
 import net.ntworld.mergeRequestIntegration.provider.gitlab.command.GitlabUnapproveMRCommand
 import net.ntworld.mergeRequestIntegration.provider.gitlab.request.*
@@ -98,16 +99,24 @@ class GitlabMergeRequestApi(
         )
 
         return if (out.hasError()) {
-            MySearchResult(listOf(), 0, 0, 0)
+            MergeRequestSearchResultImpl(listOf(), 0, 0, 0)
         } else {
             val response = out.getResponse()
-            MySearchResult(
+            MergeRequestSearchResultImpl(
                 data = response.mergeRequests.map { GitlabMRSimpleTransformer.transform(it) },
                 totalItems = response.totalItems,
                 totalPages = response.totalPages,
                 currentPage = response.currentPage
             )
         }
+    }
+
+    override fun findOrFail(projectId: String, mergeRequestId: String): MergeRequest  {
+        val mergeRequest = find(projectId, mergeRequestId)
+        if (null === mergeRequest) {
+            throw Exception("MergeRequest $mergeRequestId not found.")
+        }
+        return mergeRequest
     }
 
     private fun resolveState(state: MergeRequestState): Constants.MergeRequestState = when (state) {
@@ -129,11 +138,4 @@ class GitlabMergeRequestApi(
             MergeRequestOrdering.OLDEST -> Pair(Constants.MergeRequestOrderBy.CREATED_AT, Constants.SortOrder.ASC)
         }
     }
-
-    private data class MySearchResult(
-        override val data: List<MergeRequestInfo>,
-        override val totalPages: Int,
-        override val totalItems: Int,
-        override val currentPage: Int
-    ) : MergeRequestApi.SearchResult
 }

@@ -6,6 +6,7 @@ import com.intellij.openapi.actionSystem.*
 import com.intellij.ui.ScrollPaneFactory
 import com.intellij.ui.tabs.TabInfo
 import net.ntworld.mergeRequest.*
+import net.ntworld.mergeRequestIntegrationIde.service.ApplicationService
 import net.ntworld.mergeRequestIntegrationIde.service.CommentStore
 import net.ntworld.mergeRequestIntegrationIde.service.ProjectEventListener
 import net.ntworld.mergeRequestIntegrationIde.service.ProjectService
@@ -19,6 +20,7 @@ import net.ntworld.mergeRequestIntegrationIde.ui.util.TabsUI
 import javax.swing.JComponent
 
 class MergeRequestDetails(
+    private val applicationService: ApplicationService,
     private val ideaProject: IdeaProject,
     private val disposable: Disposable,
     private val providerData: ProviderData
@@ -47,7 +49,7 @@ class MergeRequestDetails(
         tabInfo
     }
 
-    private val myCommitsTab: MergeRequestCommitsTabUI = MergeRequestCommitsTab(ideaProject)
+    private val myCommitsTab: MergeRequestCommitsTabUI = MergeRequestCommitsTab(applicationService, ideaProject)
     private val myCommitsTabInfo: TabInfo by lazy {
         val tabInfo = TabInfo(myCommitsTab.createComponent())
         tabInfo.text = "Commit"
@@ -56,7 +58,7 @@ class MergeRequestDetails(
         tabInfo
     }
 
-    private val myCommentsTab: MergeRequestCommentsTabUI = MergeRequestCommentsTab(ideaProject)
+    private val myCommentsTab: MergeRequestCommentsTabUI = MergeRequestCommentsTab(applicationService, ideaProject)
     private val myCommentsTabInfo: TabInfo by lazy {
         val tabInfo = TabInfo(myCommentsTab.createComponent())
         tabInfo.text = "Comments"
@@ -70,7 +72,7 @@ class MergeRequestDetails(
         }
 
         override fun refreshRequested(mergeRequest: MergeRequest) {
-            GetCommentsTask(ideaProject, providerData, mergeRequest, myGetCommentsListener).start()
+            GetCommentsTask(applicationService, ideaProject, providerData, mergeRequest, myGetCommentsListener).start()
         }
     }
 
@@ -165,7 +167,7 @@ class MergeRequestDetails(
         }
 
         override fun displayCommentRequested(comment: Comment) {
-            if (ProjectService.getInstance(ideaProject).isDoingCodeReview()) {
+            if (applicationService.getProjectService(ideaProject).isDoingCodeReview()) {
                 myTabs.getTabs().select(myCommentsTabInfo, true)
             }
         }
@@ -185,7 +187,7 @@ class MergeRequestDetails(
 
         myCommitsTab.dispatcher.addListener(mySelectCommitsListener)
         myCommentsTab.dispatcher.addListener(myCommentsTabListener)
-        ProjectService.getInstance(ideaProject).dispatcher.addListener(myProjectEventListener)
+        applicationService.getProjectService(ideaProject).dispatcher.addListener(myProjectEventListener)
     }
 
     override fun hide() {
@@ -193,7 +195,7 @@ class MergeRequestDetails(
     }
 
     override fun setMergeRequest(mergeRequest: MergeRequest) {
-        GetCommentsTask(ideaProject, providerData, mergeRequest, myGetCommentsListener).start()
+        GetCommentsTask(applicationService, ideaProject, providerData, mergeRequest, myGetCommentsListener).start()
         myInfoTab.setMergeRequest(mergeRequest)
         myToolbars.forEach {
             it.setMergeRequest(mergeRequest)
@@ -201,7 +203,7 @@ class MergeRequestDetails(
     }
 
     override fun setMergeRequestInfo(mergeRequestInfo: MergeRequestInfo) {
-        FetchService.start(ideaProject, providerData, mergeRequestInfo)
+        FetchService.start(applicationService, ideaProject, providerData, mergeRequestInfo)
 
         myInfoTab.setMergeRequestInfo(mergeRequestInfo)
         myDescriptionTab.setMergeRequestInfo(providerData, mergeRequestInfo)
@@ -212,11 +214,15 @@ class MergeRequestDetails(
         myToolbars.forEach {
             it.setMergeRequestInfo(mergeRequestInfo)
         }
-        FindMergeRequestTask(ideaProject, providerData, mergeRequestInfo.id, myFindMRListener).start()
-        GetPipelinesTask(ideaProject, providerData, mergeRequestInfo, myGetPipelinesListener).start()
-        GetCommitsTask(ideaProject, providerData, mergeRequestInfo, myGetCommitsListener).start()
+        FindMergeRequestTask(applicationService, ideaProject, providerData, mergeRequestInfo.id, myFindMRListener)
+            .start()
+        GetPipelinesTask(applicationService, ideaProject, providerData, mergeRequestInfo, myGetPipelinesListener)
+            .start()
+        GetCommitsTask(applicationService, ideaProject, providerData, mergeRequestInfo, myGetCommitsListener)
+            .start()
         if (providerData.hasApprovalFeature) {
-            FindApprovalTask(ideaProject, providerData, mergeRequestInfo, myFindApprovalListener).start()
+            FindApprovalTask(applicationService, ideaProject, providerData, mergeRequestInfo, myFindApprovalListener)
+                .start()
         }
     }
 
@@ -235,7 +241,9 @@ class MergeRequestDetails(
     }
 
     private fun toolbarCommonSideComponentFactory(): JComponent {
-        val toolbar: MergeRequestDetailsToolbarUI = MergeRequestDetailsToolbar(ideaProject, providerData, this)
+        val toolbar: MergeRequestDetailsToolbarUI = MergeRequestDetailsToolbar(
+            applicationService, ideaProject, providerData, this
+        )
         toolbar.dispatcher.addListener(myToolbarListener)
         myToolbars.add(toolbar)
         return toolbar.createComponent()

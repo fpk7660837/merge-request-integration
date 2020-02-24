@@ -1,11 +1,13 @@
 package net.ntworld.mergeRequestIntegrationIde.ui.provider
 
+import com.intellij.openapi.Disposable
 import com.intellij.openapi.ui.SimpleToolWindowPanel
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.ToolWindow
-import net.ntworld.mergeRequest.CommentPosition
 import net.ntworld.mergeRequest.MergeRequest
 import net.ntworld.mergeRequest.ProviderData
-import net.ntworld.mergeRequestIntegrationIde.service.CommentStore
+import net.ntworld.mergeRequestIntegration.ApiProviderManager
+import net.ntworld.mergeRequestIntegrationIde.service.ApplicationService
 import net.ntworld.mergeRequestIntegrationIde.service.ProjectEventListener
 import net.ntworld.mergeRequestIntegrationIde.service.ProjectService
 import net.ntworld.mergeRequestIntegrationIde.ui.Component
@@ -13,10 +15,11 @@ import javax.swing.JComponent
 import com.intellij.openapi.project.Project as IdeaProject
 
 class ProviderCollection(
+    private val applicationService: ApplicationService,
     private val ideaProject: IdeaProject,
     private val toolWindow: ToolWindow
-): Component {
-    private val myProjectService = ProjectService.getInstance(ideaProject)
+): Component, Disposable {
+    private val myProjectService = applicationService.getProjectService(ideaProject)
     private val myListUI: ProviderCollectionListUI by lazy {
         val list = ProviderCollectionList()
         list.setProviders(myProjectService.registeredProviders)
@@ -28,6 +31,7 @@ class ProviderCollection(
     private val myProjectEventListener = object: ProjectEventListener {
         override fun providersClear() {
             myListUI.clear()
+            myListUI.setProviders(myProjectService.registeredProviders)
         }
 
         override fun providerRegistered(providerData: ProviderData) {
@@ -49,7 +53,6 @@ class ProviderCollection(
 
         override fun refreshClicked() {
             myProjectService.clear()
-            myListUI.setProviders(myProjectService.registeredProviders)
         }
 
         override fun helpClicked() {
@@ -64,6 +67,7 @@ class ProviderCollection(
 
         myToolbarUI.eventDispatcher.addListener(myToolbarEventListener)
         myProjectService.dispatcher.addListener(myProjectEventListener)
+        Disposer.register(ideaProject, this)
     }
 
     override fun createComponent(): JComponent = myComponent
@@ -76,5 +80,10 @@ class ProviderCollection(
 
     fun addToolbarEventListener(listener: ProviderCollectionToolbarEventListener) {
         myToolbarUI.eventDispatcher.addListener(listener)
+    }
+
+    override fun dispose() {
+        ApiProviderManager.clear()
+        myListUI.clear()
     }
 }

@@ -1,7 +1,7 @@
 <idea-plugin>
     <id>net.ntworld.nhat-phan.merge-request-integration-ee</id>
     <name>Merge Request Integration EE - Code Review for GitLab</name>
-    <vendor email="nhat.phan@ntworld.net" url="https://github.com/nhat-phan">Nhat Phan</vendor>
+    <vendor>ntworld</vendor>
     <version>2019.3.2</version>
     <product-descriptor code="PMRINTEGEE" release-date="20200107" release-version="20193"/>
     <idea-version since-build="193.4697.65"/>
@@ -12,19 +12,22 @@
     <depends>Git4Idea</depends>
 
     <extensions defaultExtensionNs="com.intellij">
-        <applicationService serviceInterface="net.ntworld.mergeRequestIntegrationIde.service.ApplicationService"
-                            serviceImplementation="net.ntworld.mergeRequestIntegrationIdeEE.ApplicationServiceImpl"/>
-
-        <projectService serviceInterface="net.ntworld.mergeRequestIntegrationIde.service.ProjectService"
-                        serviceImplementation="net.ntworld.mergeRequestIntegrationIdeEE.ProjectServiceImpl"/>
+        <applicationService serviceImplementation="net.ntworld.mergeRequestIntegrationIdeEE.EnterpriseApplicationService"/>
+        <projectService serviceImplementation="net.ntworld.mergeRequestIntegrationIdeEE.EnterpriseProjectService"/>
 
         <projectConfigurable id="merge-request-integration-ee"
                              displayName="Merge Request Integration"
                              instance="net.ntworld.mergeRequestIntegrationIdeEE.Configuration"/>
         <projectConfigurable groupId="merge-request-integration-ee"
-                             id="merge-request-integration-gitlab"
+                             id="MRI:gitlab-ee"
                              displayName="Gitlab"
                              instance="net.ntworld.mergeRequestIntegrationIdeEE.GitlabConnectionsConfigurable"/>
+        <!--
+        <projectConfigurable groupId="merge-request-integration-ee"
+                             id="MRI:github-ee"
+                             displayName="Github"
+                             instance="net.ntworld.mergeRequestIntegrationIdeEE.GithubConnectionsConfigurable"/>
+        -->
 
         <toolWindow id="Merge Request Integration"
                     secondary="false"

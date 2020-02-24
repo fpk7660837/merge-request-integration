@@ -9,13 +9,13 @@ import com.intellij.ui.EditorSettingsProvider
 import com.intellij.ui.EditorTextField
 import com.intellij.util.EventDispatcher
 import net.ntworld.mergeRequest.*
-import net.ntworld.mergeRequest.command.CreateCommentCommand
-import net.ntworld.mergeRequest.command.ReplyCommentCommand
+import net.ntworld.mergeRequest.request.CreateCommentRequest
+import net.ntworld.mergeRequest.request.ReplyCommentRequest
 import net.ntworld.mergeRequestIntegration.internal.CommentPositionImpl
 import net.ntworld.mergeRequestIntegration.make
+import net.ntworld.mergeRequestIntegration.provider.ProviderException
 import net.ntworld.mergeRequestIntegrationIde.service.ApplicationService
 import net.ntworld.mergeRequestIntegrationIde.service.CommentStore
-import net.ntworld.mergeRequestIntegrationIde.service.ProjectService
 import net.ntworld.mergeRequestIntegrationIde.ui.Component
 import net.ntworld.mergeRequestIntegrationIde.ui.util.FileTypeUtil
 import java.lang.Exception
@@ -23,6 +23,7 @@ import java.util.*
 import javax.swing.*
 
 class CommentEditorPanel(
+    private val applicationService: ApplicationService,
     private val ideaProject: Project,
     private val providerData: ProviderData,
     private val mergeRequest: MergeRequest,
@@ -73,7 +74,13 @@ class CommentEditorPanel(
         }
         when (item.type) {
             CommentStore.ItemType.EDIT -> initUpdateComment()
-            CommentStore.ItemType.NEW -> initCreateComment()
+            CommentStore.ItemType.NEW -> {
+                if (null === item.position) {
+                    initCreateGeneralComment()
+                } else {
+                    initCreateComment()
+                }
+            }
             CommentStore.ItemType.REPLY -> initReplyComment()
         }
         myOkButton!!.addActionListener {
@@ -84,7 +91,7 @@ class CommentEditorPanel(
             }
         }
         myCancelButton!!.addActionListener {
-            dispatcher.multicaster.onDestroyRequested(providerData, mergeRequest, comment, item)
+            dispatcher.multicaster.onCancelButtonClicked(providerData, mergeRequest, comment, item)
         }
         myAddDiffComment!!.addActionListener {
             myDebugInfoWrapper!!.isVisible = myAddDiffComment!!.isVisible && myAddDiffComment!!.isSelected
@@ -93,6 +100,14 @@ class CommentEditorPanel(
 
     private fun initUpdateComment() {}
     private fun updateComment() {}
+
+    private fun initCreateGeneralComment() {
+        myAddDiffComment!!.isVisible = false
+        myAddDiffComment!!.isSelected = false
+        myOkButton!!.text = "Create General Comment"
+        hideCreateNewCommentComponents()
+        hideDebugOfCreateNewCommentComponents()
+    }
 
     private fun initCreateComment() {
         val position = item.position
@@ -116,39 +131,47 @@ class CommentEditorPanel(
         return if (line > 0) line.toString() else ""
     }
 
-    private fun createComment() {
-        if (!myAddDiffComment!!.isSelected) {
-            try {
-                ApplicationService.instance.infrastructure.commandBus() process CreateCommentCommand.make(
-                    providerId = providerData.id,
-                    mergeRequestId = mergeRequest.id,
-                    position = null,
-                    body = myEditorTextField.text
-                )
-                dispatcher.multicaster.onDestroyRequested(providerData, mergeRequest, comment, item)
-            } catch (exception: Exception) {
-            }
+    private fun createGeneralComment() {
+        val response = applicationService.infrastructure.serviceBus() process CreateCommentRequest.make(
+            providerId = providerData.id,
+            mergeRequestId = mergeRequest.id,
+            position = null,
+            body = myEditorTextField.text
+        ) ifError {
+            applicationService.getProjectService(ideaProject).notify(
+                "There was an error from server. \n\n ${it.message}",
+                NotificationType.ERROR
+            )
+            throw ProviderException(it)
         }
+        dispatcher.multicaster.onCommentCreated(providerData, mergeRequest, comment, item, response.createdCommentId)
+    }
 
+    private fun createCommentInPosition() {
         val position = item.position
         if (null !== position) {
-            try {
-                ApplicationService.instance.infrastructure.commandBus() process CreateCommentCommand.make(
-                    providerId = providerData.id,
-                    mergeRequestId = mergeRequest.id,
-                    position = rebuildPosition(position),
-                    body = myEditorTextField.text
-                )
-                dispatcher.multicaster.onDestroyRequested(providerData, mergeRequest, comment, item)
-            } catch (exception: Exception) {
-                ProjectService.getInstance(ideaProject).notify(
+            val response = applicationService.infrastructure.serviceBus() process CreateCommentRequest.make(
+                providerId = providerData.id,
+                mergeRequestId = mergeRequest.id,
+                position = rebuildPosition(position),
+                body = myEditorTextField.text
+            ) ifError {
+                applicationService.getProjectService(ideaProject).notify(
                     "There was an error from server. \n\n Please fill the line of old commit and new commit then try again.",
                     NotificationType.ERROR
                 )
                 showDebugOfCreateNewCommentComponents()
-                throw exception
+                throw ProviderException(it)
             }
+            dispatcher.multicaster.onCommentCreated(providerData, mergeRequest, comment, item, response.createdCommentId)
         }
+    }
+
+    private fun createComment() {
+        if (!myAddDiffComment!!.isSelected) {
+            return createGeneralComment()
+        }
+        createCommentInPosition()
     }
 
     private fun rebuildPosition(currentPosition: CommentPosition): CommentPosition {
@@ -184,13 +207,18 @@ class CommentEditorPanel(
     private fun replyComment() {
         val repliedComment = comment
         if (null !== repliedComment) {
-            ApplicationService.instance.infrastructure.commandBus() process ReplyCommentCommand.make(
+            val response = applicationService.infrastructure.serviceBus() process ReplyCommentRequest.make(
                 providerId = providerData.id,
                 mergeRequestId = mergeRequest.id,
                 repliedComment = repliedComment,
                 body = myEditorTextField.text
-            )
-            dispatcher.multicaster.onDestroyRequested(providerData, mergeRequest, comment, item)
+            ) ifError {
+                applicationService.getProjectService(ideaProject).notify(
+                    "There was an error from server. \n\n ${it.message}",
+                    NotificationType.ERROR
+                )
+            }
+            dispatcher.multicaster.onCommentCreated(providerData, mergeRequest, comment, item, response.createdCommentId)
         }
     }
 
@@ -224,11 +252,19 @@ class CommentEditorPanel(
     override fun createComponent(): JComponent = myWholePanel!!
 
     interface Listener : EventListener {
-        fun onDestroyRequested(
+        fun onCancelButtonClicked(
             providerData: ProviderData,
             mergeRequest: MergeRequest,
             comment: Comment?,
             item: CommentStore.Item
+        )
+
+        fun onCommentCreated(
+            providerData: ProviderData,
+            mergeRequest: MergeRequest,
+            comment: Comment?,
+            item: CommentStore.Item,
+            createdCommentId: String?
         )
     }
 }

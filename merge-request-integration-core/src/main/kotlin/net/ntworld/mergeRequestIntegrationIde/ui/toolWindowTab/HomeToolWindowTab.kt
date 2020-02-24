@@ -19,11 +19,12 @@ import javax.swing.JPanel
 import com.intellij.openapi.project.Project as IdeaProject
 
 class HomeToolWindowTab(
+    private val applicationService: ApplicationService,
     private val ideaProject: IdeaProject,
     private val toolWindow: ToolWindow
 ) : Component {
     private val mySplitter = OnePixelSplitter(HomeToolWindowTab::class.java.canonicalName, 0.35f)
-    private val myCollectionPanel = ProviderCollection(ideaProject, toolWindow)
+    private val myCollectionPanel = ProviderCollection(applicationService, ideaProject, toolWindow)
     private val myDetailPanels = mutableMapOf<String, ProviderDetailsUI>()
     private val myContents = mutableMapOf<String, Content>()
     private val myMRToolWindowTabs = mutableMapOf<String, MergeRequestToolWindowTab>()
@@ -63,7 +64,8 @@ class HomeToolWindowTab(
         override fun providerSelected(providerData: ProviderData) {
             if (null === myDetailPanels[providerData.id]) {
                 val details = ProviderDetails(
-                    ideaProject, toolWindow, myCollectionPanel.getListEventDispatcher(), providerData
+                    applicationService, ideaProject, toolWindow,
+                    myCollectionPanel.getListEventDispatcher(), providerData
                 )
                 myDetailPanels[providerData.id] = details
                 details.listEventDispatcher.addListener(myDetailsListEventListener)
@@ -120,11 +122,11 @@ class HomeToolWindowTab(
         toolWindow.contentManager.addContentManagerListener(myContentManagerListener)
         myCollectionPanel.addListEventListener(myCollectionPanelListEventListener)
         myCollectionPanel.addToolbarEventListener(myCollectionPanelToolbarEventListener)
-        ProjectService.getInstance(ideaProject).dispatcher.addListener(myProjectEventListener)
+        applicationService.getProjectService(ideaProject).dispatcher.addListener(myProjectEventListener)
     }
 
     private fun findNameForTab(providerData: ProviderData): String {
-        if (ApplicationService.instance.isLegal(providerData)) {
+        if (this.applicationService.isLegal(providerData)) {
             return providerData.name
         }
         return if (providerData.name.length < 20) {
@@ -136,7 +138,9 @@ class HomeToolWindowTab(
 
     private fun openTab(providerData: ProviderData, mergeRequestInfo: MergeRequestInfo? = null) {
         if (null === myContents[providerData.id]) {
-            val toolWindowTab = MergeRequestToolWindowTab(ideaProject, toolWindow.contentManager, providerData)
+            val toolWindowTab = MergeRequestToolWindowTab(
+                applicationService, ideaProject, toolWindow.contentManager, providerData
+            )
             myMRToolWindowTabs[providerData.id] = toolWindowTab
 
             val content = toolWindow.contentManager.factory.createContent(

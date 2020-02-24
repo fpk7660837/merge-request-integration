@@ -22,11 +22,9 @@ import net.ntworld.mergeRequest.CommentPosition
 import net.ntworld.mergeRequest.MergeRequest
 import net.ntworld.mergeRequest.ProviderData
 import net.ntworld.mergeRequestIntegration.util.DateTimeUtil
+import net.ntworld.mergeRequestIntegrationIde.internal.CommentNodeDataImpl
 import net.ntworld.mergeRequestIntegrationIde.internal.CommentStoreItem
-import net.ntworld.mergeRequestIntegrationIde.service.CodeReviewUtil
-import net.ntworld.mergeRequestIntegrationIde.service.CommentStore
-import net.ntworld.mergeRequestIntegrationIde.service.ProjectEventListener
-import net.ntworld.mergeRequestIntegrationIde.service.ProjectService
+import net.ntworld.mergeRequestIntegrationIde.service.*
 import net.ntworld.mergeRequestIntegrationIde.ui.util.CustomSimpleToolWindowPanel
 import net.ntworld.mergeRequestIntegrationIde.ui.util.Icons
 import net.ntworld.mergeRequestIntegrationIde.ui.util.RepositoryUtil
@@ -39,16 +37,19 @@ import javax.swing.event.TreeSelectionListener
 import javax.swing.tree.*
 
 class CommentCollection(
+    private val applicationService: ApplicationService,
     private val ideaProject: IdeaProject
 ) : CommentCollectionUI, TreeCellRenderer {
     override val dispatcher = EventDispatcher.create(CommentCollectionUI.Listener::class.java)
 
-    private val projectService = ProjectService.getInstance(ideaProject)
+    private val projectService = applicationService.getProjectService(ideaProject)
     private var myProviderData: ProviderData? = null
     private var myMergeRequest: MergeRequest? = null
     private var myComments: List<Comment>? = null
     private var mySelectedTreeNode: DefaultMutableTreeNode? = null
     private var myShowResolved = false
+    private var myPreselectedCommentId: String? = null
+
     private val myTree = Tree()
     private val myComponent = CustomSimpleToolWindowPanel(vertical = true, borderless = true)
     private val myRoot = DefaultMutableTreeNode()
@@ -126,6 +127,10 @@ class CommentCollection(
                 dispatcher.multicaster.refreshRequested(mr)
             }
         }
+
+        override fun onAddGeneralCommentClicked() {
+            createGeneralCommentNode()
+        }
     }
 
     init {
@@ -145,6 +150,10 @@ class CommentCollection(
         projectService.dispatcher.addListener(myProjectListener)
     }
 
+    override fun setPreselectedCommentBeforeRefreshing(id: String?) {
+        myPreselectedCommentId = id
+    }
+
     override fun setComments(providerData: ProviderData, mergeRequest: MergeRequest, comments: List<Comment>) {
         myProviderData = providerData
         myMergeRequest = mergeRequest
@@ -152,7 +161,7 @@ class CommentCollection(
         filterAndDisplayComments(providerData, comments, myShowResolved)
     }
 
-    override fun createReplyComment() {
+    override fun createReplyCommentNode() {
         val providerData = myProviderData
         val mergeRequest = myMergeRequest
         if (null === providerData || null === mergeRequest) {
@@ -183,6 +192,72 @@ class CommentCollection(
 
         appendEditorNode(storeItem, selectedNode.comment, parentTreeNode, true)
         myModel.nodeStructureChanged(parentTreeNode)
+    }
+
+    override fun createGeneralCommentNode() {
+        val providerData = myProviderData
+        val mergeRequest = myMergeRequest
+        if (null === providerData || null === mergeRequest) {
+            return
+        }
+
+        // find general item in tree
+        val parentTreeNode = findOrCreateGeneralGroupNode(providerData)
+        val parentNode = parentTreeNode.userObject
+        if (parentNode !is GroupNode) {
+            return
+        }
+
+        if (parentTreeNode.childCount > 0) {
+            val lastChild = parentTreeNode.lastChild
+            if (lastChild !is DefaultMutableTreeNode || lastChild.userObject is EditorNode) {
+                return
+            }
+        }
+
+        val storeItem = CommentStoreItem.createNewGeneralItem(providerData, mergeRequest, parentNode.data.nodeData)
+        projectService.commentStore.add(storeItem)
+
+        appendEditorNode(storeItem, null, parentTreeNode, true)
+        myModel.nodeStructureChanged(parentTreeNode)
+    }
+
+    private fun findOrCreateGeneralGroupNode(providerData: ProviderData) : DefaultMutableTreeNode {
+        val node = findGeneralGroupNode()
+        if (null !== node) {
+            return node
+        }
+        return createGeneralGroupNode(providerData)
+    }
+
+    private fun findGeneralGroupNode() : DefaultMutableTreeNode? {
+        val nodes = myRoot.children()
+        for (node in nodes) {
+            if (node !is DefaultMutableTreeNode) {
+                continue
+            }
+            val groupNodePresentation = node.userObject
+            if (groupNodePresentation !is GroupNode) {
+                continue
+            }
+
+            if (groupNodePresentation.isGeneral()) {
+                return node
+            }
+        }
+        return null
+    }
+
+    private fun createGeneralGroupNode(providerData: ProviderData) : DefaultMutableTreeNode {
+        val repository = RepositoryUtil.findRepository(ideaProject, providerData)
+        val groupNodePresentation = GroupNode(ideaProject, repository, GroupedComments(
+            comments = listOf(),
+            nodeData = CommentNodeDataImpl(isGeneral = true, fullPath = "", fileName = "General", line = 0)
+        ))
+        val groupNode = DefaultMutableTreeNode(groupNodePresentation)
+        myRoot.add(groupNode)
+        groupNodePresentation.update()
+        return groupNode
     }
 
     private fun appendEditorNode(
@@ -265,6 +340,7 @@ class CommentCollection(
         val repository = RepositoryUtil.findRepository(ideaProject, providerData)
         val grouped = groupCommentsByPathAndLine(comments)
         myRoot.removeAllChildren()
+        var preselectedNode: DefaultMutableTreeNode? = null
         for (item in grouped) {
             val groupNodePresentation = GroupNode(ideaProject, repository, item)
             val groupNode = DefaultMutableTreeNode(groupNodePresentation)
@@ -273,6 +349,9 @@ class CommentCollection(
                 val commentNode = DefaultMutableTreeNode(commentNodePresentation)
                 groupNode.add(commentNode)
                 commentNodePresentation.update()
+                if (null !== myPreselectedCommentId && myPreselectedCommentId == comment.id) {
+                    preselectedNode = commentNode
+                }
             }
             findAndAppendReplyNode(item.nodeData.getHash(), groupNode, item.comments)
             findAndAppendNewNode(item.nodeData.getHash(), groupNode)
@@ -280,7 +359,11 @@ class CommentCollection(
             groupNodePresentation.update()
         }
         dispatcher.multicaster.commentsDisplayed(comments.size)
-        myTree.selectionPath = TreeUtil.getPath(myRoot, myRoot)
+        myTree.selectionPath = if (null !== preselectedNode) {
+            TreeUtil.getPath(myRoot, preselectedNode)
+        } else {
+            TreeUtil.getPath(myRoot, myRoot)
+        }
         myModel.nodeStructureChanged(myRoot)
         TreeUtil.expandAll(myTree)
     }
@@ -414,6 +497,8 @@ class CommentCollection(
         private val repository: GitRepository?,
         val data: GroupedComments
     ) : PresentableNodeDescriptor<GroupedComments>(ideaProject, null) {
+        fun isGeneral() = data.nodeData.isGeneral
+
         override fun update(presentation: PresentationData) {
             if (data.nodeData.isGeneral) {
                 presentation.addText(data.nodeData.fileName, SimpleTextAttributes.REGULAR_ATTRIBUTES)

@@ -1,6 +1,6 @@
 package net.ntworld.mergeRequestIntegrationIde.service
 
-import com.intellij.openapi.components.ServiceManager
+import com.intellij.openapi.project.Project
 import net.ntworld.foundation.Infrastructure
 import net.ntworld.mergeRequest.ProviderData
 import net.ntworld.mergeRequest.ProviderInfo
@@ -10,18 +10,22 @@ interface ApplicationService {
 
     val infrastructure: Infrastructure
 
+    val settings: ApplicationSettings
+
+    fun getProjectService(project: Project): ProjectService
+
+    fun getChangesToolWindowId(): String
+
     fun supported(): List<ProviderInfo>
 
     fun addProviderConfiguration(id: String, info: ProviderInfo, credentials: ApiCredentials)
 
-    fun removeProviderConfiguration(id: String)
+    fun removeAllProviderConfigurations()
 
     fun getProviderConfigurations(): List<ProviderSettings>
 
     fun isLegal(providerData: ProviderData): Boolean
 
-    companion object {
-        val instance: ApplicationService
-            get() = ServiceManager.getService(ApplicationService::class.java)
-    }
+    fun updateSettings(settings: ApplicationSettings)
+
 }

@@ -8,6 +8,8 @@ interface ApiProvider {
 
     val credentials: ApiCredentials
 
+    val cache: Cache
+
     val user: UserApi
 
     val mergeRequest: MergeRequestApi
@@ -15,4 +17,6 @@ interface ApiProvider {
     val project: ProjectApi
 
     val comment: CommentApi
+
+    fun setOptions(options: ApiOptions)
 }

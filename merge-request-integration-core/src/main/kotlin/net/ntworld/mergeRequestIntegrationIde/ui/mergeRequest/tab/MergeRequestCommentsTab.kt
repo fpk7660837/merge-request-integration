@@ -6,6 +6,7 @@ import com.intellij.util.EventDispatcher
 import net.ntworld.mergeRequest.Comment
 import net.ntworld.mergeRequest.MergeRequest
 import net.ntworld.mergeRequest.ProviderData
+import net.ntworld.mergeRequestIntegrationIde.service.ApplicationService
 import net.ntworld.mergeRequestIntegrationIde.service.CommentStore
 import net.ntworld.mergeRequestIntegrationIde.ui.mergeRequest.tab.comment.CommentCollection
 import net.ntworld.mergeRequestIntegrationIde.ui.mergeRequest.tab.comment.CommentCollectionUI
@@ -13,14 +14,17 @@ import net.ntworld.mergeRequestIntegrationIde.ui.mergeRequest.tab.comment.Commen
 import net.ntworld.mergeRequestIntegrationIde.ui.mergeRequest.tab.comment.CommentDetailsUI
 import javax.swing.JComponent
 
-class MergeRequestCommentsTab(private val ideaProject: IdeaProject) : MergeRequestCommentsTabUI {
+class MergeRequestCommentsTab(
+    private val applicationService: ApplicationService,
+    private val ideaProject: IdeaProject
+) : MergeRequestCommentsTabUI {
     override val dispatcher = EventDispatcher.create(MergeRequestCommentsTabUI.Listener::class.java)
 
     private val mySplitter = OnePixelSplitter(
         MergeRequestCommentsTab::class.java.canonicalName,
         0.5f
     )
-    private val myCollection : CommentCollectionUI = CommentCollection(ideaProject)
+    private val myCollection : CommentCollectionUI = CommentCollection(applicationService, ideaProject)
     private val myCollectionEventListener = object: CommentCollectionUI.Listener {
         override fun commentUnselected() {
             myDetails.hide()
@@ -47,14 +51,15 @@ class MergeRequestCommentsTab(private val ideaProject: IdeaProject) : MergeReque
             dispatcher.multicaster.refreshRequested(mergeRequest)
         }
     }
-    private val myDetails: CommentDetailsUI = CommentDetails(ideaProject)
+    private val myDetails: CommentDetailsUI = CommentDetails(applicationService, ideaProject)
     private val myDetailsEventListener = object: CommentDetailsUI.Listener {
-        override fun onRefreshCommentsRequested(mergeRequest: MergeRequest) {
+        override fun onRefreshCommentsRequested(mergeRequest: MergeRequest, preselectedCommentId: String?) {
+            myCollection.setPreselectedCommentBeforeRefreshing(preselectedCommentId)
             myCollection.dispatcher.multicaster.refreshRequested(mergeRequest)
         }
 
         override fun onReplyButtonClicked() {
-            myCollection.createReplyComment()
+            myCollection.createReplyCommentNode()
         }
     }
 

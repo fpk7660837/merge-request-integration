@@ -19,14 +19,15 @@ import net.ntworld.mergeRequestIntegrationIde.ui.Component
 import net.ntworld.mergeRequestIntegrationIde.ui.mergeRequest.tab.MergeRequestDescriptionTab
 import net.ntworld.mergeRequestIntegrationIde.ui.util.HtmlHelper
 import net.ntworld.mergeRequestIntegrationIde.ui.util.Icons
-import java.awt.Color
 import java.awt.ComponentOrientation
 import java.awt.Dimension
 import java.awt.event.ActionListener
 import java.util.*
 import javax.swing.*
 
-class CommentPanel : Component {
+class CommentPanel(
+    private val applicationService: ApplicationService
+) : Component {
     var myWholePanel: JPanel? = null
     var myFullName: JLabel? = null
     var myUsername: JLabel? = null
@@ -70,8 +71,8 @@ class CommentPanel : Component {
                 comment = comment
             )
         }
-        ApplicationService.instance.infrastructure.commandBus() process command
-        dispatcher.multicaster.onDestroyRequested(providerData, mergeRequest, comment)
+        applicationService.infrastructure.commandBus() process command
+        dispatcher.multicaster.onResolveButtonClicked(providerData, mergeRequest, comment)
     }
     private val myDeleteButtonActionListener = ActionListener {
         val providerData = myProviderData
@@ -85,12 +86,12 @@ class CommentPanel : Component {
             "Do you want to delete the comment?", "Are you sure", Messages.getQuestionIcon()
         )
         if (result == Messages.YES) {
-            ApplicationService.instance.infrastructure.commandBus() process DeleteCommentCommand.make(
+            applicationService.infrastructure.commandBus() process DeleteCommentCommand.make(
                 providerId = providerData.id,
                 mergeRequestId = mergeRequest.id,
                 comment = comment
             )
-            dispatcher.multicaster.onDestroyRequested(providerData, mergeRequest, comment)
+            dispatcher.multicaster.onDeleteButtonClicked(providerData, mergeRequest, comment)
         }
     }
 
@@ -164,7 +165,13 @@ class CommentPanel : Component {
     interface Listener : EventListener {
         fun onReplyButtonClick()
 
-        fun onDestroyRequested(
+        fun onResolveButtonClicked(
+            providerData: ProviderData,
+            mergeRequest: MergeRequest,
+            comment: Comment
+        )
+
+        fun onDeleteButtonClicked(
             providerData: ProviderData,
             mergeRequest: MergeRequest,
             comment: Comment

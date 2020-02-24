@@ -5,6 +5,7 @@ import com.intellij.openapi.project.Project as IdeaProject
 import net.ntworld.mergeRequest.Comment
 import net.ntworld.mergeRequest.MergeRequest
 import net.ntworld.mergeRequest.ProviderData
+import net.ntworld.mergeRequestIntegrationIde.service.ApplicationService
 import net.ntworld.mergeRequestIntegrationIde.service.CommentStore
 import net.ntworld.mergeRequestIntegrationIde.service.ProjectService
 import net.ntworld.mergeRequestIntegrationIde.ui.panel.CommentEditorPanel
@@ -14,21 +15,40 @@ import javax.swing.BoxLayout
 import javax.swing.JComponent
 import javax.swing.JPanel
 
-class CommentDetails(private val ideaProject: IdeaProject) : CommentDetailsUI {
+class CommentDetails(
+    private val applicationService: ApplicationService,
+    private val ideaProject: IdeaProject
+) : CommentDetailsUI {
     override val dispatcher = EventDispatcher.create(CommentDetailsUI.Listener::class.java)
 
-    private val myCommentPanel = CommentPanel()
+    private val myCommentPanel = CommentPanel(applicationService)
     private val myCommentPanelComponent = myCommentPanel.createComponent()
     private val myCommentEditorPanelMap = mutableMapOf<CommentStore.Item, CommentEditorPanel>()
     private val myCommentEditorPanelComponentMap = mutableMapOf<CommentStore.Item, Component>()
     private val myWrapper = JPanel()
     private val myCommentEditorPanelListener = object : CommentEditorPanel.Listener {
-        override fun onDestroyRequested(
+        override fun onCancelButtonClicked(
             providerData: ProviderData,
             mergeRequest: MergeRequest,
             comment: Comment?,
             item: CommentStore.Item
         ) {
+            removeEditorPanelAndCommentInStore(item)
+            dispatcher.multicaster.onRefreshCommentsRequested(mergeRequest, null)
+        }
+
+        override fun onCommentCreated(
+            providerData: ProviderData,
+            mergeRequest: MergeRequest,
+            comment: Comment?,
+            item: CommentStore.Item,
+            createdCommentId: String?
+        ) {
+            removeEditorPanelAndCommentInStore(item)
+            dispatcher.multicaster.onRefreshCommentsRequested(mergeRequest, createdCommentId)
+        }
+
+        private fun removeEditorPanelAndCommentInStore(item: CommentStore.Item) {
             val component = myCommentEditorPanelComponentMap[item]
             if (null !== component) {
                 myWrapper.remove(component)
@@ -36,8 +56,7 @@ class CommentDetails(private val ideaProject: IdeaProject) : CommentDetailsUI {
             }
             myCommentEditorPanelMap.remove(item)
             myCommentEditorPanelComponentMap.remove(item)
-            ProjectService.getInstance(ideaProject).commentStore.remove(item.id)
-            dispatcher.multicaster.onRefreshCommentsRequested(mergeRequest)
+            applicationService.getProjectService(ideaProject).commentStore.remove(item.id)
         }
     }
     private val myCommentPanelListener = object : CommentPanel.Listener {
@@ -45,8 +64,14 @@ class CommentDetails(private val ideaProject: IdeaProject) : CommentDetailsUI {
             dispatcher.multicaster.onReplyButtonClicked()
         }
 
-        override fun onDestroyRequested(providerData: ProviderData, mergeRequest: MergeRequest, comment: Comment) {
-            dispatcher.multicaster.onRefreshCommentsRequested(mergeRequest)
+        override fun onResolveButtonClicked(providerData: ProviderData, mergeRequest: MergeRequest, comment: Comment) =
+            destroyCommentPanel(mergeRequest)
+
+        override fun onDeleteButtonClicked(providerData: ProviderData, mergeRequest: MergeRequest, comment: Comment) =
+            destroyCommentPanel(mergeRequest)
+
+        private fun destroyCommentPanel(mergeRequest: MergeRequest) {
+            dispatcher.multicaster.onRefreshCommentsRequested(mergeRequest, null)
             hide()
         }
     }
@@ -90,7 +115,7 @@ class CommentDetails(private val ideaProject: IdeaProject) : CommentDetailsUI {
 
         if (!myCommentEditorPanelMap.containsKey(item)) {
             val commentEditorPanel = CommentEditorPanel(
-                ideaProject, providerData, mergeRequest, comment, item
+                applicationService, ideaProject, providerData, mergeRequest, comment, item
             )
             commentEditorPanel.addDestroyListener(myCommentEditorPanelListener)
             val commentEditorPanelComponent = commentEditorPanel.createComponent()
